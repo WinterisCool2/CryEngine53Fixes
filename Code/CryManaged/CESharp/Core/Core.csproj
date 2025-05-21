@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
+    <ProjectGuid>{7B3F4428-1CFE-4CCF-B1CB-DEFA5F86D6FB}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>CryEngine</RootNamespace>
+    <AssemblyName>CryEngine.Core</AssemblyName>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <UseMSBuildEngine>False</UseMSBuildEngine>
+    <TargetFrameworkProfile>
+    </TargetFrameworkProfile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>..\..\..\..\bin\win_x64</OutputPath>
+    <DefineConstants>DEBUG;TRACE;WIN64</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x64</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>true</Prefer32Bit>
+    <WarningLevel>4</WarningLevel>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>..\..\..\..\bin\win_x64</OutputPath>
+    <DefineConstants>TRACE;WIN64</DefineConstants>
+    <Optimize>true</Optimize>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>true</Prefer32Bit>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>..\..\..\..\bin\win_x64</OutputPath>
+    <DefineConstants>DEBUG;TRACE;WIN86</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>true</Prefer32Bit>
+    <PlatformTarget>x86</PlatformTarget>
+    <WarningLevel>4</WarningLevel>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'">
+    <OutputPath>..\..\..\..\bin\win_x64_release</OutputPath>
+    <DefineConstants>TRACE;WIN86</DefineConstants>
+    <Optimize>true</Optimize>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>true</Prefer32Bit>
+    <PlatformTarget>x86</PlatformTarget>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RunPostBuildEvent>Always</RunPostBuildEvent>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="CryEngine.Common">
+      <HintPath>..\..\..\..\bin\win_x64\CryEngine.Common.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Audio\AudioManager.cs" />
+    <Compile Include="Console\ConsoleCommand.cs" />
+    <Compile Include="Console\ConsoleVariable.cs" />
+    <Compile Include="Debugging\DebugDraw.cs" />
+    <Compile Include="Debugging\ExceptionHandler.cs" />
+    <Compile Include="Debugging\ExceptionMessage.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Debugging\ExceptionMessage.Designer.cs">
+      <DependentUpon>ExceptionMessage.cs</DependentUpon>
+    </Compile>
+    <Compile Include="EntitySystem\EntityComponent.cs" />
+    <Compile Include="EntitySystem\EntityId.cs" />
+    <Compile Include="EntitySystem\EntityPhysics.cs" />
+    <Compile Include="EntitySystem\Native\NativeEntityMethods.cs" />
+    <Compile Include="EntitySystem\Attributes.cs" />
+    <Compile Include="EntitySystem\EntityStatics.cs" />
+    <Compile Include="EntitySystem\EntityProperty.cs" />
+    <Compile Include="EntitySystem\Entity.cs" />
+    <Compile Include="Environment.cs" />
+    <Compile Include="ICryEnginePlugin.cs" />
+    <Compile Include="Input\Mouse.cs" />
+    <Compile Include="Input\ActionHandler.cs" />
+    <Compile Include="AI\Attributes.cs" />
+    <Compile Include="AI\BehaviorTreeNode.cs" />
+    <Compile Include="AI\BehaviorTreeNodeFactory.cs" />
+    <Compile Include="AI\LastingMovementRequest.cs" />
+    <Compile Include="Math\Angles3.cs" />
+    <Compile Include="Math\Color.cs" />
+    <Compile Include="GameFramework.cs" />
+    <Compile Include="Input\Input.cs" />
+    <Compile Include="LevelSystem.cs" />
+    <Compile Include="Math\Matrix3x4.cs" />
+    <Compile Include="Math\Primitives.cs" />
+    <Compile Include="Math\Quaternion.cs" />
+    <Compile Include="Math\Vector2.cs" />
+    <Compile Include="Math\Vector3.cs" />
+    <Compile Include="Math\Vector4.cs" />
+    <Compile Include="Physics\RaycastHit.cs" />
+    <Compile Include="Random.cs" />
+    <Compile Include="Rendering\Renderer.cs" />
+    <Compile Include="Serialization\CachedTypeInfo.cs" />
+    <Compile Include="Serialization\DomainSerializer.cs" />
+    <Compile Include="Serialization\ObjectReader.cs" />
+    <Compile Include="Serialization\ObjectWriter.cs" />
+    <Compile Include="SystemEventHandler.cs" />
+    <Compile Include="Extensions.cs" />
+    <Compile Include="Util\Event.cs" />
+    <Compile Include="Util\FileSystem.cs" />
+    <Compile Include="Util\ReflectionHelper.cs" />
+    <Compile Include="Util\Tools.cs" />
+    <Compile Include="Math\MathHelpers.cs" />
+    <Compile Include="Attributes.cs" />
+    <Compile Include="Debugging\Log.cs" />
+    <Compile Include="FlowSystem\RunScene.cs" />
+    <Compile Include="FlowSystem\FlowNode.cs" />
+    <Compile Include="Camera.cs" />
+    <Compile Include="Timer.cs" />
+    <Compile Include="Physics\Ray.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Debugging\ExceptionMessage.resx">
+      <DependentUpon>ExceptionMessage.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -3186,3 +3186,170 @@ void CArticulatedEntity::GetMemoryStatistics(ICrySizer *pSizer) const
 	pSizer->AddObject(m_joints, m_nJointsAlloc*sizeof(m_joints[0]));
 	pSizer->AddObject(m_infos, m_nPartsAlloc*sizeof(m_infos[0]));
 }
+
+// In RemoveGeometry
+void CArticulatedEntity::RemoveGeometry(int id, int bThreadSafe)
+{
+	ChangeRequest<void> req(this, m_pWorld, 0, bThreadSafe, 0, id);
+	if (req.IsQueued())
+		return;
+	int i, j;
+
+	{ 
+		WriteLock lockJoints(m_lockJoints);
+		for (i = 0; i < m_nParts && m_parts[i].id != id; i++);
+		if (i == m_nParts) return;
+		phys_geometry* pgeom = m_parts[i].pPhysGeom;
+		if (!pgeom) return; // Prevent null dereference
+
+		if (m_parts[i].mass > 0) {
+			quaternionf qrot = m_bGrounded && m_bAwake && m_nJoints > 0 ? m_joints[0].quat0 : m_qrot;
+			Vec3 bodypos = m_pos + qrot * (m_parts[i].pos + m_parts[i].q * pgeom->origin);
+			quaternionf bodyq = qrot * m_parts[i].q * pgeom->q;
+			m_body.Add(bodypos, -pgeom->Ibody * cube(m_parts[i].scale) * sqr(m_parts[i].scale), bodyq, -pgeom->V * cube(m_parts[i].scale), -m_parts[i].mass);
+			int iJoint = m_infos[i].iJoint;
+			if ((unsigned)iJoint >= (unsigned)m_nJoints) return; // Prevent out-of-bounds
+			Vec3 pivot = m_joints[iJoint].body.pos + m_joints[iJoint].quat * m_joints[iJoint].pivot[1];
+			m_joints[iJoint].body.zero();
+			for (j = m_joints[iJoint].iStartPart; j < m_joints[iJoint].iStartPart + m_joints[iJoint].nParts; j++) if (j != i) {
+				if ((unsigned)j >= (unsigned)m_nParts) continue;
+				bodypos = m_pos + qrot * (m_parts[j].pos + m_parts[j].q * m_parts[j].pPhysGeom->origin);
+				bodyq = qrot * m_parts[j].q * m_parts[j].pPhysGeom->q;
+				pgeom = m_parts[j].pPhysGeom;
+				if (!pgeom) continue;
+				if (m_joints[iJoint].body.M == 0)
+					m_joints[iJoint].body.Create(bodypos, pgeom->Ibody * sqr(m_parts[j].scale) * cube(m_parts[j].scale), bodyq, pgeom->V * cube(m_parts[j].scale), m_parts[j].mass, qrot * m_parts[j].q, bodypos);
+				else
+					m_joints[iJoint].body.Add(bodypos, pgeom->Ibody * sqr(m_parts[j].scale) * cube(m_parts[j].scale), bodyq, pgeom->V * cube(m_parts[j].scale), m_parts[j].mass);
+			}
+			if (m_body.M < 1E-8) m_body.M = 0;
+			if (m_joints[iJoint].body.M < 1E-8) m_joints[iJoint].body.M = 0;
+			for (j = m_joints[iJoint].iStartPart; j < m_joints[iJoint].iStartPart + m_joints[iJoint].nParts; j++)
+				if ((unsigned)j < (unsigned)m_nParts)
+					m_infos[j].pos0 = (m_pos + m_qrot * m_parts[j].pos - m_joints[iJoint].body.pos) * m_joints[iJoint].quat;
+			m_joints[iJoint].pivot[1] = (pivot - m_joints[iJoint].body.pos) * m_joints[iJoint].quat;
+			m_joints[iJoint].I = Matrix33(m_joints[iJoint].body.q) * m_joints[iJoint].body.Ibody * Matrix33(!m_joints[iJoint].body.q);
+		}
+		if (--m_joints[j = m_infos[i].iJoint].nParts <= 0 && !m_joints[j].nChildren) {
+			for (int ij = 0; ij < m_nJoints; ij++)
+				m_joints[ij].iParent -= isneg(j - m_joints[ij].iParent);
+			if (m_joints[j].iParent >= 0)
+				m_joints[m_joints[j].iParent].nChildren--, m_joints[m_joints[j].iParent].nChildrenTree--;
+			memmove(m_joints + j, m_joints + j + 1, (--m_nJoints - j) * sizeof(ae_joint));
+			for (int ipart = 0; ipart < m_nParts; ipart++)
+				m_infos[ipart].iJoint -= isneg(j - m_infos[ipart].iJoint);
+		}
+		for (j = 0; j < m_nJoints; j++) if (m_joints[j].iStartPart > i)
+			m_joints[j].iStartPart--;
+		memmove(m_infos + i, m_infos + i + 1, (m_nParts - i - 1) * sizeof(m_infos[0]));
+	}
+
+	CPhysicalEntity::RemoveGeometry(id, 1);
+
+	for (i = 0; i < m_nParts; i++)
+		m_parts[i].pNewCoords = (coord_block_BBox*)&m_infos[i].pos;
+}
+
+// In GetRigidBody
+RigidBody* CArticulatedEntity::GetRigidBody(int ipart, int bModify)
+{
+	return (unsigned int)ipart < (unsigned int)m_nParts && m_infos && m_joints
+		? &m_joints[m_infos[ipart].iJoint].body
+		: &m_body;
+}
+
+// In GetRigidBodyData
+RigidBody* CArticulatedEntity::GetRigidBodyData(RigidBody* pbody, int ipart)
+{
+	if (!pbody) return nullptr;
+	RigidBody* pbodyInt = GetRigidBody(ipart);
+	if (!pbodyInt) return nullptr;
+	*pbody = *pbodyInt;
+	if (m_iSimClass != 4 || (unsigned int)ipart >= (unsigned int)m_nParts)
+		pbody->v += m_velHost;
+	else if (m_infos && m_parts) {
+		Vec3 pos0 = m_posHist[0] + m_qHist[0] * m_infos[ipart].posHist[0], pos1 = m_posHist[1] + m_qHist[1] * m_infos[ipart].posHist[1];
+		quaternionf q0 = m_qHist[0] * m_infos[ipart].qHist[0], q1 = m_qHist[1] * m_infos[ipart].qHist[1], dq = q1 * !q0;
+		pbody->pos = pos1;
+		pbody->v = (pos1 - pos0) * m_rhistTime;
+		pbody->w = dq.v * (dq.w * 2 * m_rhistTime);
+		if (pbody->v.len2() > sqr(m_pWorld->m_vars.maxVelBones)) {
+			float scale = m_pWorld->m_vars.maxVelBones * isqrt_fast_tpl(pbody->v.len2());
+			pbody->v *= scale; pbody->w *= scale;
+		}
+	}
+	return pbody;
+}
+
+// In CheckSelfCollision
+int CArticulatedEntity::CheckSelfCollision(int ipart0, int ipart1)
+{
+	if ((unsigned int)ipart0 >= (unsigned int)m_nParts || (unsigned int)ipart1 >= (unsigned int)m_nParts || !m_infos || !m_joints)
+		return 0;
+	return m_joints[m_infos[ipart0].iJoint].selfCollMask & getmask(ipart1);
+}
+
+// In GetUnprojAxis
+int CArticulatedEntity::GetUnprojAxis(int idx, Vec3& axis)
+{
+	axis.Set(0, 0, 0);
+	if ((unsigned int)idx >= (unsigned int)m_nJoints)
+		return 0;
+	if (!(m_joints[idx].flags & (angle0_limit_reached | angle0_locked | angle0_gimbal_locked) * 6)) // y and z axes are not locked
+		return 1;
+	else {
+		int i; for (i = 2; i >= 0 && m_joints[idx].flags & (angle0_limit_reached | angle0_locked | angle0_gimbal_locked) << i; i--);
+		if (i >= 0) {
+			axis = m_joints[idx].rotaxes[i]; // free axis from list: z y x
+			return 1;
+		}
+	}
+	return 0;
+}
+
+// In SyncWithHost
+int CArticulatedEntity::SyncWithHost(int bRecalcJoints, float time_interval)
+{
+	if (m_pHost) {
+		if (m_pHost->m_iSimClass == 7) {
+			m_pHost->Release(); m_pHost = 0; return 0;
+		}
+		int i, ipart;
+		pe_status_pos sp;
+		if (!m_pHost->GetStatus(&sp))
+			return 0;
+		m_posPivot = sp.q * m_posHostPivot + sp.pos;
+		pe_params_pos pp;
+		pp.pos = m_posPivot - m_offsPivot;
+		pp.q = m_pHost->m_qrot * m_qHostPivot;
+		pp.bRecalcBounds = 0;
+		SetParams(&pp, 1);
+		m_flags = m_flags & ~pef_invisible | m_pHost->m_flags & pef_invisible;
+		if (time_interval > 0) {
+			pe_status_dynamics sd;
+			if (m_pHost->GetStatus(&sd)) {
+				m_velHost = sd.v;
+				if (m_bInheritVel) {
+					float rdt = 1.0f / time_interval;
+					m_acc = (sd.v - m_body.v) * rdt;
+					m_wacc = (sd.w - m_body.w) * rdt;
+					m_body.v = sd.v;
+					m_body.w = sd.w;
+				}
+			}
+		}
+		if (bRecalcJoints && m_joints)
+			for (i = 0; i < m_nJoints; i++) SyncBodyWithJoint(i);
+		else if (m_joints && m_parts && m_infos)
+			for (i = 0; i < m_nJoints; i++) {
+				ipart = m_joints[i].iStartPart;
+				m_joints[i].quat = m_parts[ipart].q * !m_infos[ipart].q0;
+				m_joints[i].body.q = m_joints[i].quat * !m_joints[i].body.qfb;
+				m_joints[i].body.pos = (m_parts[ipart].pos - m_joints[i].quat * m_infos[ipart].pos0) + m_pos;
+			}
+		ComputeBBox(m_BBoxNew);
+		UpdatePosition(m_pWorld->RepositionEntity(this, 1, m_BBoxNew));
+		return 1;
+	}
+	return 0;
+}

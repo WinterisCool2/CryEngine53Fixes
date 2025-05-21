@@ -2327,3 +2327,175 @@ void CLivingEntity::Step_HandleWasFlying(Vec3& vel, int& bFlying, const Vec3& ax
 			vel.zero();
 	}
 }
+CLivingEntity::CLivingEntity(CPhysicalWorld *pWorld, IGeneralMemoryHeap* pHeap)
+	: CPhysicalEntity(pWorld, pHeap)
+{
+	if (pWorld) 
+		m_gravity = pWorld->m_vars.gravity; 
+			
+	m_iSimClass = 3;
+	
+	cylinder cyl;
+	cyl.axis.Set(0,0,1); cyl.center.zero();
+	cyl.hh = m_size.z; cyl.r = m_size.x;
+	
+	if (m_pWorld) {
+		if (m_bUseCapsule)
+			((CCapsuleGeom*)(m_pCylinderGeom = new CCapsuleGeom))->CreateCapsule((capsule*)&cyl);
+		else 
+			(m_pCylinderGeom = new CCylinderGeom)->CreateCylinder(&cyl);
+		if (m_pCylinderGeom)
+		{
+			m_pCylinderGeom->CalcPhysicalProperties(&m_CylinderGeomPhys);
+			m_CylinderGeomPhys.pMatMapping = 0;
+			m_CylinderGeomPhys.nMats = 0;
+			m_CylinderGeomPhys.nRefCount = -1;
+		}
+		m_parts = m_pWorld->AllocEntityPart(); m_nPartsAlloc = 1;
+		if (m_parts)
+		{
+			m_parts[0].pPhysGeom = m_parts[0].pPhysGeomProxy = &m_CylinderGeomPhys;
+			m_parts[0].id = 100;
+			m_parts[0].pos.Set(0,0,m_hCyl-m_hPivot);
+			m_parts[0].q.SetIdentity();
+			m_parts[0].scale = 1.0f;
+			m_parts[0].mass = m_mass;
+			m_parts[0].surface_idx = m_surface_idx;
+			m_parts[0].flags = geom_collides|geom_monitor_contacts|geom_floats;
+			m_parts[0].flagsCollider = geom_colltype_player;
+			m_parts[0].minContactDist = m_size.z*0.1;
+			m_parts[0].pNewCoords = (coord_block_BBox*)&m_parts[0].pos;
+			m_parts[0].idmatBreakable = -1;
+			m_parts[0].pLattice = 0;
+			m_parts[0].pMatMapping = 0;
+			m_parts[0].nMats = 0;
+			m_parts[0].pPlaceholder = 0;
+			m_nParts = 1;
+		}
+	}
+	
+	//CPhysicalEntity
+	m_flags = pef_pushable_by_players | pef_traceable | lef_push_players | lef_push_objects | pef_never_break;
+	m_collisionClass.type |= collision_class_living;
+}
+
+CLivingEntity::~CLivingEntity()
+{
+	for(int i=0;i<m_nParts;i++) {
+		if (!m_parts || !m_parts[i].pPhysGeom || m_parts[i].pMatMapping!=m_parts[i].pPhysGeom->pMatMapping)
+			delete[] m_parts[i].pMatMapping;
+		if (m_parts)
+			m_parts[i].pMatMapping=0;
+	}
+	if (m_parts)
+		m_parts[0].pPhysGeom = m_parts[0].pPhysGeomProxy = 0;
+	if (m_pContacts) delete[] m_pContacts;
+	if (m_pCylinderGeom) delete m_pCylinderGeom;
+	if (m_pBody) delete[] m_pBody;
+	if (m_pHeadGeom) delete m_pHeadGeom;
+}																					
+
+void CLivingEntity::ReleaseGroundCollider()
+{
+	if (m_pLastGroundCollider) {
+		m_pLastGroundCollider->Release();
+		m_pLastGroundCollider = 0;
+	}
+}
+
+void CLivingEntity::SetGroundCollider(CPhysicalEntity *pCollider, int bAcceptStatic)
+{
+	ReleaseGroundCollider();
+	if (pCollider && pCollider->m_iSimClass+bAcceptStatic>0) {
+		pCollider->AddRef();
+		m_pLastGroundCollider = pCollider;
+	}
+}
+
+int CLivingEntity::Awake(int bAwake,int iSource)
+{ 
+	if (m_pLastGroundCollider && m_pLastGroundCollider->m_iSimClass==7)
+		ReleaseGroundCollider();
+	if (!(m_bActiveEnvironment = bAwake)) {
+		m_vel.zero(); m_velRequested.zero(); m_gravity.zero();
+	}
+	return 1; 
+}
+
+float CLivingEntity::UnprojectionNeeded(const Vec3 &pos,const quaternionf &qrot, float hCollider,float hPivot, 
+																				const Vec3 &newdim, int bCapsule, Vec3 &dirUnproj, int iCaller) const
+{
+	if (!m_pWorld)
+		return 0.0f;
+
+	int i,j,nents;
+	float t;
+	geom_world_data gwd[3];
+	intersection_params ip;
+	CPhysicalEntity **pentlist = nullptr;
+	geom_contact *pcontacts = nullptr;
+
+	cylinder newcyl;
+	CCylinderGeom geomCyl;
+	CCapsuleGeom geomCaps;
+	CCylinderGeom *pgeom = bCapsule ? &geomCaps : &geomCyl;
+	newcyl.r = newdim.x; newcyl.hh = newdim.z;
+	newcyl.center.zero();
+	newcyl.axis.Set(0,0,1);
+	geomCyl.CreateCylinder(&newcyl);
+	geomCaps.CreateCapsule((capsule*)&newcyl);
+	Vec3 BBox[2];
+	BBox[0].Set(-newdim.x,-newdim.x,-hPivot) += pos;
+	BBox[1].Set(newdim.x,newdim.x,newdim.z+hCollider-hPivot+newdim.x*bCapsule) += pos;
+
+	nents = m_pWorld->GetEntitiesAround(BBox[0],BBox[1], pentlist, m_collTypes|ent_no_ondemand_activation, 0,0,iCaller);
+	gwd[0].R = Matrix33(qrot); 
+	gwd[0].offset = pos + gwd[0].R*Vec3(0,0,hCollider-hPivot); 
+	gwd[0].v = -dirUnproj;
+	ip.time_interval = m_size.z*2;
+	for(i=0;i<nents;i++) 
+	{
+		if (!pentlist || !pentlist[i] || pentlist[i]==this || (m_pForeignData && pentlist[i]->m_pForeignData==m_pForeignData) || pentlist[i]->IgnoreCollisionsWith(this,1))
+			continue;
+		if (pentlist[i]->GetType()!=PE_LIVING) {
+			ReadLock lock(pentlist[i]->m_lockUpdate);
+			for(j=0;j<pentlist[i]->m_nParts;j++) 
+			{
+				if (!pentlist[i]->m_parts || !(pentlist[i]->m_parts[j].flags & collider_flags))
+					continue;
+				gwd[1].R = Matrix33(pentlist[i]->m_qrot*pentlist[i]->m_parts[j].q);
+				gwd[1].offset = pentlist[i]->m_pos + pentlist[i]->m_qrot*pentlist[i]->m_parts[j].pos;
+				gwd[1].scale = pentlist[i]->m_parts[j].scale;
+				if (!pentlist[i]->m_parts[j].pPhysGeomProxy || !pentlist[i]->m_parts[j].pPhysGeomProxy->pGeom)
+					continue;
+				if (pgeom->Intersect(pentlist[i]->m_parts[j].pPhysGeomProxy->pGeom, gwd,gwd+1, &ip, pcontacts)) {
+					got_unproj:
+					if (dirUnproj.len2()==0) dirUnproj = pcontacts[0].dir;
+					t = pcontacts[0].t;	// lock should be released after reading t
+					return t;
+				}
+				for(int ipart=1;ipart<m_nParts;ipart++) 
+				{
+					if (!m_parts || !pentlist[i]->m_parts || !(m_parts[ipart].flagsCollider & pentlist[i]->m_parts[j].flags))
+						continue;
+					gwd[2].R = Matrix33(qrot); 
+					gwd[2].offset = pos + qrot*m_parts[ipart].pos; 
+					gwd[2].scale = m_parts[ipart].scale;
+					gwd[2].v = -dirUnproj;
+					if (!m_parts[ipart].pPhysGeomProxy || !m_parts[ipart].pPhysGeomProxy->pGeom || !pentlist[i]->m_parts[j].pPhysGeomProxy || !pentlist[i]->m_parts[j].pPhysGeomProxy->pGeom)
+						continue;
+					if (m_parts[ipart].pPhysGeomProxy->pGeom->Intersect(pentlist[i]->m_parts[j].pPhysGeomProxy->pGeom, gwd+2,gwd+1, &ip, pcontacts))
+						goto got_unproj;
+				}
+			}
+		} else if (pentlist[i]->m_parts && (pentlist[i]->m_parts[0].flags&collider_flags) && !IgnoreCollision(m_collisionClass, pentlist[i]->m_collisionClass)) {
+			CLivingEntity *pent = (CLivingEntity*)pentlist[i];
+			if (fabs_tpl((pos.z+hCollider-hPivot)-(pent->m_pos.z+pent->m_hCyl-pent->m_hPivot)) < newdim.z+pent->m_size.z &&
+					len2(Vec2(pos)-Vec2(pent->m_pos)) < sqr(newdim.x+pent->m_size.x)) {
+				dirUnproj = Vec3(0,0,signnz((pent->m_pos.z+pent->m_hCyl-pent->m_hPivot)-(pos.z+hCollider-hPivot)));
+				return fabs_tpl((pent->m_pos.z+pent->m_hCyl-pent->m_hPivot)-(pos.z+hCollider-hPivot));
+			}
+		}
+	}
+	return 0.0f;
+}
